@@ -15,31 +15,61 @@ namespace ili {
     }
 
     void Runtime::call(Method &method, table::Token token) {
-        const auto &executable = method.getExecutable();
-
         switch (token.getId()) {
             case table::MethodDef::ID: {
-                auto calledMethod = Method(executable, token);
+                const auto &executable = method.getExecutable();
+                auto methodToCall = Method(executable, token);
 
-                const auto methodExecutable = calledMethod.getExecutable();
+                const auto methodExecutable = methodToCall.getExecutable();
                 const auto methodDef = method.getMethodDef();
                 const auto typeDef = executable->getTypeDefOfMethod(methodDef);
+                const auto module = executable->getModule();
 
+                const auto moduleName = methodExecutable->getString(module->nameIndex);
                 const auto namespaceName = methodExecutable->getString(typeDef->typeNamespaceIndex);
                 const auto typeName = methodExecutable->getString(typeDef->typeNameIndex);
                 const auto methodName = methodExecutable->getString(methodDef->nameIndex);
 
-                fmt::println("Executing .NET method '{}::{}::{}'",
-                    namespaceName, typeName, methodName
+                fmt::println("Executing .NET method '[{}]{}::{}::{}'",
+                    moduleName, namespaceName, typeName, methodName
                 );
 
-                executeInstructions(calledMethod);
+                executeInstructions(methodToCall);
                 break;
             }
             case table::MemberRef::ID: {
-                const auto qualifiedMethodName = method.getExecutable()->getQualifiedMethodName(token);
-                fmt::println("Executing Native method '{}'", std::string(qualifiedMethodName));
-                m_stack.pop<ManagedPointer>();
+                const auto qualifiedMethodName = method.getExecutable()->getQualifiedMemberName(token);
+                const auto assemblyName = std::string(qualifiedMethodName.assemblyName);
+
+                auto assemblyIt = m_assemblies.find(assemblyName);
+                if (assemblyIt == m_assemblies.end()) {
+                    // Executable has not been loaded yet, try to load it.
+
+                    for (const auto &loaderFunction : m_assemblyLoaders) {
+                        auto result = loaderFunction(assemblyName);
+                        if (!result.has_value())
+                            continue;
+
+                        assemblyIt = m_assemblies.emplace(assemblyName, std::move(result.value())).first;
+                        break;
+                    }
+                }
+
+                if (assemblyIt == m_assemblies.end()) {
+                    throw std::runtime_error(fmt::format("Could not find assembly '{}'", assemblyName));
+                }
+
+                const auto &assembly = assemblyIt->second;
+                const auto methodDef = assembly.getMethodByName(qualifiedMethodName.namespaceName, qualifiedMethodName.typeName, qualifiedMethodName.methodName);
+                if (methodDef == nullptr) {
+                    throw std::runtime_error(fmt::format("Assembly '{}' does not contain method '{}'", assemblyName, std::string(qualifiedMethodName)));
+                }
+
+                fmt::println("Executing .NET method '{}'", std::string(qualifiedMethodName));
+
+                Method methodToCall(&assembly, assembly.getTokenOfTableEntry(methodDef));
+                executeInstructions(methodToCall);
+
                 break;
             }
             default: throw std::runtime_error("Invalid call token type");

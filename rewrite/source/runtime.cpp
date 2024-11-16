@@ -4,8 +4,9 @@
 #include <fmt/format.h>
 
 namespace ili {
-    i32 Runtime::run(Executable&& executable) {
-        auto &newExecutable = this->m_executables.emplace("", std::move(executable)).first->second;
+    i32 Runtime::run(Assembly&& assembly) {
+        auto assemblyName = std::string(assembly.getString(assembly.getModule()->nameIndex));
+        auto &newExecutable = this->m_assemblies.emplace(std::move(assemblyName), std::move(assembly)).first->second;
         m_stack = Stack(newExecutable.getStackSize());
 
         auto &method = m_methodStack.emplace_back(&newExecutable, newExecutable.getEntrypointMethodToken());
@@ -13,6 +14,15 @@ namespace ili {
         executeInstructions(method);
 
         return 0;
+    }
+
+    void Runtime::addAssemblyLoader(const AssemblyLoaderFunction &function) {
+        m_assemblyLoaders.emplace_back(function);
+    }
+
+    void Runtime::addAssembly(Assembly &&assembly) {
+        auto assemblyName = std::string(assembly.getString(assembly.getModule()->nameIndex));
+        m_assemblies.emplace(std::move(assemblyName), std::move(assembly));
     }
 
     util::Generator<op::Instruction> Method::getInstructions() {
@@ -28,7 +38,7 @@ namespace ili {
     }
 
 
-    Method::Method(const Executable *executable, table::Token methodToken) : m_executable(executable), m_methodToken(methodToken) {
+    Method::Method(const Assembly *executable, table::Token methodToken) : m_executable(executable), m_methodToken(methodToken) {
 
     }
 
@@ -75,7 +85,7 @@ namespace ili {
 
         // If that still didn't work, the data is bogus
         if (m_byteCode.empty()) {
-            throw std::runtime_error(fmt::format("Cannot get byte code of method {}", m_methodToken.getIndex()));
+            throw std::runtime_error(fmt::format("Cannot get byte code of method {}", m_methodToken.getIndex().index));
         }
 
         return m_byteCode;

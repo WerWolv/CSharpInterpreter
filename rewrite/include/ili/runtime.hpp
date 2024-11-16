@@ -2,8 +2,9 @@
 
 #include <list>
 #include <vector>
+#include <functional>
 
-#include <ili/executable_file.hpp>
+#include <ili/assembly.hpp>
 #include <ili/tables.hpp>
 #include <ili/opcodes.hpp>
 #include <ili/utils.hpp>
@@ -179,14 +180,14 @@ namespace ili {
 
     class Method {
     public:
-        Method(const Executable *executable, table::Token methodToken);
+        Method(const Assembly *executable, table::Token methodToken);
 
         [[nodiscard]] const table::MethodDef* getMethodDef() const;
         [[nodiscard]] table::Token getToken() const;
         [[nodiscard]] std::span<const u8> getByteCode() const;
 
         [[nodiscard]] util::Generator<op::Instruction> getInstructions();
-        [[nodiscard]] const Executable* getExecutable() const { return m_executable; }
+        [[nodiscard]] const Assembly* getExecutable() const { return m_executable; }
 
         [[nodiscard]] auto& getLocalVariable(u16 index) {
             return m_localVariables[index];
@@ -201,7 +202,7 @@ namespace ili {
         }
 
     private:
-        const Executable *m_executable;
+        const Assembly *m_executable;
 
         table::Token m_methodToken;
         mutable const table::MethodDef *m_methodDef = nullptr;
@@ -215,7 +216,11 @@ namespace ili {
     public:
         Runtime() = default;
 
-        i32 run(Executable &&executable);
+        i32 run(Assembly &&assembly);
+
+        using AssemblyLoaderFunction = std::function<std::optional<Assembly>(const std::string &assemblyName)>;
+        void addAssemblyLoader(const AssemblyLoaderFunction &function);
+        void addAssembly(Assembly &&assembly);
 
     private:
         void nop();
@@ -232,8 +237,9 @@ namespace ili {
         void executeInstructions(Method &method);
 
     private:
-        std::map<std::string, Executable> m_executables;
+        std::map<std::string, Assembly> m_assemblies;
         std::list<Method> m_methodStack;
+        std::list<AssemblyLoaderFunction> m_assemblyLoaders;
         Stack m_stack;
     };
 

@@ -9,7 +9,7 @@ add_subdirectory(lib/third_party/magic_enum)
 
 add_executable(CSharpInterpreter_Rewrite
     source/main.cpp
-    source/executable_file.cpp
+    source/assembly.cpp
     source/data_structures.cpp
     source/runtime.cpp
     source/execution.cpp

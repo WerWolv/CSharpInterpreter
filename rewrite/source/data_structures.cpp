@@ -8,8 +8,8 @@ namespace ili {
     namespace table {
 
         Token codedIndexToToken(CodedIndexType type, u8 tag, u32 index) {
-            constexpr static auto InvalidId = 0xFF;
-            const auto id = [type, tag] -> u8 {
+            constexpr static auto InvalidId = TableID(0xFF);
+            const auto id = [type, tag] {
                 switch (type) {
                     using enum CodedIndexType;
                     case TypeDefOrRef:
@@ -123,7 +123,7 @@ namespace ili {
                 return InvalidId;
             }();
 
-            return Token(id, index);
+            return Token(id, TableIndex(index));
         }
 
     }

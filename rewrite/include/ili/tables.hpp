@@ -5,34 +5,6 @@
 
 namespace ili::table {
 
-    struct Token {
-        explicit Token() : Token(0x00) { }
-        explicit Token(u8 id, u32 index) : value(u32(id) << 24U | (index & 0x00FF'FFFFU)) {}
-        explicit Token(u32 value) : value(value) {}
-
-        u32 value;
-
-        [[nodiscard]] u8 getId() const { return u8(value >> 24U); }
-        [[nodiscard]] u32 getIndex() const { return value & 0x00FF'FFFFU; }
-    };
-    static_assert(sizeof(Token) == 4);
-
-    enum class CodedIndexType : u8 {
-        TypeDefOrRef,
-        HasConstant,
-        HasCustomAttribute,
-        HasFieldMarshall,
-        HasDeclSecurity,
-        MemberRefParent,
-        HasSemantics,
-        MethodDefOrRef,
-        MemberForwarded,
-        Implementation,
-        CustomAttributeType,
-        ResolutionScope,
-        TypeOrMethodDef
-    };
-
     struct StringIndex {
         u16 index;
     };
@@ -52,6 +24,41 @@ namespace ili::table {
     template<std::unsigned_integral T>
     struct TableIndex {
         T index;
+
+        bool operator==(const TableIndex& other) const = default;
+        auto operator<=>(const TableIndex& other) const = default;
+    };
+
+    enum class TableID : u8 { };
+
+    struct Token {
+        explicit Token() : Token(0x00) { }
+
+        template<typename T = u16>
+        explicit Token(TableID id, TableIndex<T> index) : value(u32(id) << 24U | (index.index & 0x00FF'FFFFU)) {}
+        explicit Token(u32 value) : value(value) {}
+
+        u32 value;
+
+        [[nodiscard]] TableID getId() const { return TableID(value >> 24U); }
+        [[nodiscard]] TableIndex<u32> getIndex() const { return TableIndex(value & 0x00FF'FFFFU); }
+    };
+    static_assert(sizeof(Token) == 4);
+
+    enum class CodedIndexType : u8 {
+        TypeDefOrRef,
+        HasConstant,
+        HasCustomAttribute,
+        HasFieldMarshall,
+        HasDeclSecurity,
+        MemberRefParent,
+        HasSemantics,
+        MethodDefOrRef,
+        MemberForwarded,
+        Implementation,
+        CustomAttributeType,
+        ResolutionScope,
+        TypeOrMethodDef
     };
 
     Token codedIndexToToken(CodedIndexType type, u8 tag, u32 index);
@@ -89,7 +96,12 @@ namespace ili::table {
         }
     };
 
-    struct Table {};
+    struct TableBase {};
+
+    template<u8 ID_>
+    struct Table : TableBase {
+        constexpr static auto ID = TableID(ID_);
+    };
 
     struct MethodImplAttributes {
         u8 codeType : 2;
@@ -120,9 +132,7 @@ namespace ili::table {
     };
     static_assert(sizeof(MethodAttributes) == 2);
 
-    struct MethodDef : Table {
-        constexpr static auto ID = 0x06;
-
+    struct MethodDef : Table<0x06> {
         u32 rva;
         MethodImplAttributes implFlags;
         MethodAttributes flags;
@@ -142,9 +152,7 @@ namespace ili::table {
     };
     static_assert(sizeof(AssemblyFlags) == 4);
 
-    struct AssemblyRef : Table {
-        constexpr static auto ID = 0x23;
-
+    struct AssemblyRef : Table<0x23> {
         u16 versionMajor;
         u16 versionMinor;
         u16 buildNumber;
@@ -156,17 +164,13 @@ namespace ili::table {
         BlobIndex hashValueIndex;
     };
 
-    struct TypeRef : Table {
-        constexpr static auto ID = 0x01;
-
+    struct TypeRef : Table<0x01> {
         CodedIndex<CodedIndexType::ResolutionScope> resolutionScopeIndex;
         StringIndex typeNameIndex;
         StringIndex typeNamespaceIndex;
     };
 
-    struct TypeSpec : Table {
-        constexpr static auto ID = 0x1B;
-
+    struct TypeSpec : Table<0x1B> {
         BlobIndex signatureIndex;
     };
 
@@ -182,9 +186,7 @@ namespace ili::table {
     };
     static_assert(sizeof(ParamAttributes) == 2);
 
-    struct Param : Table {
-        constexpr static auto ID = 0x08;
-
+    struct Param : Table<0x08> {
         ParamAttributes flags;
         u16 sequence;
         StringIndex nameIndex;
@@ -200,9 +202,7 @@ namespace ili::table {
     };
     static_assert(sizeof(PropertyAttributes) == 2);
 
-    struct Property : Table {
-        constexpr static auto ID = 0x17;
-
+    struct Property : Table<0x17> {
         PropertyAttributes flags;
         StringIndex nameIndex;
         BlobIndex typeIndex;
@@ -214,9 +214,7 @@ namespace ili::table {
         SHA1 = 0x8004
     };
 
-    struct Assembly : Table {
-        constexpr static auto ID = 0x20;
-
+    struct Assembly : Table<0x20> {
         AssemblyHashAlgorithm hashAlgId;
         u16 majorVersion, minorVersion, buildNumber, revisionNumber;
         AssemblyFlags flags;
@@ -224,9 +222,7 @@ namespace ili::table {
         StringIndex nameIndex;
     };
 
-    struct ModuleRef : Table {
-        constexpr static auto ID = 0x1A;
-
+    struct ModuleRef : Table<0x1A> {
         StringIndex nameIndex;
     };
 
@@ -236,9 +232,7 @@ namespace ili::table {
     };
     static_assert(sizeof(FileAttributes) == 4);
 
-    struct File : Table {
-        constexpr static auto ID = 0x26;
-
+    struct File : Table<0x26> {
         FileAttributes flags;
         StringIndex nameIndex;
         BlobIndex hashValueIndex;
@@ -252,9 +246,7 @@ namespace ili::table {
     };
     static_assert(sizeof(EventAttributes) == 2);
 
-    struct Event : Table {
-        constexpr static auto ID = 0x14;
-
+    struct Event : Table<0x14> {
         EventAttributes eventFlags;
         StringIndex nameIndex;
         CodedIndex<CodedIndexType::TypeDefOrRef> eventType;
@@ -278,9 +270,7 @@ namespace ili::table {
     };
     static_assert(sizeof(TypeAttributes) == 4);
 
-    struct ExportedType : Table {
-        constexpr static auto ID = 0x27;
-
+    struct ExportedType : Table<0x27> {
         TypeAttributes flags;
         TableIndex<u32> typeDefIdHintIndex;
         StringIndex typeNameIndex;
@@ -288,24 +278,18 @@ namespace ili::table {
         CodedIndex<CodedIndexType::Implementation> implementation;
     };
 
-    struct InterfaceImpl : Table {
-        constexpr static auto ID = 0x09;
-
+    struct InterfaceImpl : Table<0x09> {
         TableIndex<u16> classIndex;
         CodedIndex<CodedIndexType::TypeDefOrRef> interface;
     };
 
-    struct DeclSecurity : Table {
-        constexpr static auto ID = 0x0E;
-
+    struct DeclSecurity : Table<0x0E> {
         u16 action;
         CodedIndex<CodedIndexType::HasDeclSecurity> parent;
         BlobIndex permissionSetIndex;
     };
 
-    struct StandAloneSig : Table {
-        constexpr static auto ID = 0x11;
-
+    struct StandAloneSig : Table<0x11> {
         BlobIndex signatureIndex;
     };
 
@@ -316,9 +300,7 @@ namespace ili::table {
     };
     static_assert(sizeof(ManifestResourceAttribute) == 4);
 
-    struct ManifestResource : Table {
-        constexpr static auto ID = 0x28;
-
+    struct ManifestResource : Table<0x28> {
         u32 offset;
         ManifestResourceAttribute flags;
         StringIndex nameIndex;
@@ -335,32 +317,24 @@ namespace ili::table {
     };
     static_assert(sizeof(GenericParamAttributes) == 2);
 
-    struct GenericParam : Table {
-        constexpr static auto ID = 0x2A;
-
+    struct GenericParam : Table<0x2A> {
         u16 numberIndex;
         GenericParamAttributes flags;
         CodedIndex<CodedIndexType::MethodDefOrRef> owner;
         StringIndex nameIndex;
     };
 
-    struct GenericParamConstraint : Table {
-        constexpr static auto ID = 0x2C;
-
+    struct GenericParamConstraint : Table<0x2C> {
         TableIndex<u16> ownerIndex;
         CodedIndex<CodedIndexType::TypeDefOrRef> constraint;
     };
 
-    struct MethodSpec : Table {
-        constexpr static auto ID = 0x2B;
-
+    struct MethodSpec : Table<0x2B> {
         CodedIndex<CodedIndexType::MethodDefOrRef> method;
         BlobIndex instantiationIndex;
     };
 
-    struct TypeDef : Table {
-        constexpr static auto ID = 0x02;
-
+    struct TypeDef : Table<0x02> {
         u32 flags;
         StringIndex typeNameIndex;
         StringIndex typeNamespaceIndex;
@@ -369,17 +343,13 @@ namespace ili::table {
         TableIndex<u16> methodListIndex;
     };
 
-    struct MemberRef : Table {
-        constexpr static auto ID = 0x0A;
-
+    struct MemberRef : Table<0x0A> {
         CodedIndex<CodedIndexType::MemberRefParent> classIndex;
         StringIndex nameIndex;
         BlobIndex signatureIndex;
     };
 
-    struct Module : Table {
-        constexpr static auto ID = 0x00;
-
+    struct Module : Table<0x00> {
         u16 generation;
         StringIndex nameIndex;
         GuidIndex mvId;
@@ -387,9 +357,7 @@ namespace ili::table {
         GuidIndex encBaseId;
     };
 
-    struct ClassLayout : Table {
-        constexpr static auto ID = 0x0F;
-
+    struct ClassLayout : Table<0x0F> {
         u16 packingSize;
         u32 classSize;
         TableIndex<u16> parentIndex;
@@ -412,18 +380,14 @@ namespace ili::table {
     };
     static_assert(sizeof(FieldAttributes) == 2);
 
-    struct Field : Table {
-        constexpr static auto ID = 0x04;
-
+    struct Field : Table<0x04> {
         u16 flags;
         StringIndex nameIndex;
         BlobIndex signatureIndex;
     };
 
     template<typename T>
-    concept TableType = std::derived_from<T, Table> && requires {
-        { T::ID } -> std::convertible_to<u8>;
-    };
+    concept TableType = std::derived_from<T, TableBase>;
 
 }
 
