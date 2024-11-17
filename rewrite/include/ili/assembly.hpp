@@ -20,8 +20,8 @@ namespace ili {
 
         [[nodiscard]] table::Token getEntrypointMethodToken() const;
 
-        [[nodiscard]] std::span<const u8> getUserStringBytes(u32 index) const;
-        [[nodiscard]] std::span<const u8> getBlobBytes(u32 index) const;
+        [[nodiscard]] std::span<const u8> getUserStringBytes(table::UserStringIndex index) const;
+        [[nodiscard]] std::span<const u8> getBlobBytes(table::BlobIndex index) const;
         [[nodiscard]] std::span<const u8> getSectionBytes(const Section& section, u64 rva, std::size_t size) const;
 
         [[nodiscard]] std::string_view getString(table::StringIndex index) const;
@@ -45,8 +45,11 @@ namespace ili {
             }
         };
 
-        const table::TypeDef* getTypeDefOfMethod(const table::MethodDef *methodToFind) const;
-        const table::ClassLayout* getClassLayoutOfType(const table::TypeDef *typeDef) const;
+        [[nodiscard]] const table::TypeDef* getTypeDefOfMethod(const table::MethodDef *methodToFind) const;
+        [[nodiscard]] const table::TypeDef* getTypeDefOfField(const table::Field *fieldToFind) const;
+        [[nodiscard]] const table::ClassLayout* getClassLayoutOfType(const table::TypeDef *typeDef) const;
+        [[nodiscard]] const table::MethodDef* getMethodOfType(const table::TypeDef *typeDef, std::string_view methodName) const;
+        [[nodiscard]] std::size_t getTypeSize(const table::TypeDef *typeDef) const;
 
         [[nodiscard]] QualifiedName getQualifiedMemberName(table::Token memberRefToken) const;
 

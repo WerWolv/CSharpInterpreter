@@ -237,19 +237,38 @@ namespace ili {
         if (methodToFind == nullptr)
             return nullptr;
 
-        const auto methodDefCount = getTableRowCount(table::MethodDef::ID);
-        for (u64 i = 1; i < methodDefCount; i++) {
-            const auto currTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 0));
-            const auto nextTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 1));
+        const auto typeDefCount = getTableRowCount(table::TypeDef::ID);
+        for (u64 i = 0; i < typeDefCount - 1; i++) {
+            const auto currTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 1));
+            const auto nextTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 2));
 
             const auto currMethodDef = getTableEntryByIndex<table::MethodDef>(currTypeDef->methodListIndex);
             const auto nextMethodDef = getTableEntryByIndex<table::MethodDef>(nextTypeDef->methodListIndex);
 
-            if (methodToFind >= currMethodDef && methodToFind < nextMethodDef)
-                return nextTypeDef;
+            if (methodToFind->rva >= currMethodDef->rva && methodToFind->rva < nextMethodDef->rva)
+                return currTypeDef;
         }
 
-        return getTableEntryByIndex<table::TypeDef>(table::TableIndex(methodDefCount));
+        return getTableEntryByIndex<table::TypeDef>(table::TableIndex(typeDefCount));
+    }
+
+    const table::TypeDef* Assembly::getTypeDefOfField(const table::Field *fieldToFind) const {
+        if (fieldToFind == nullptr)
+            return nullptr;
+
+        const auto typeDefCount = getTableRowCount(table::TypeDef::ID);
+        for (u64 i = 0; i < typeDefCount - 1; i++) {
+            const auto currTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 1));
+            const auto nextTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 2));
+
+            const auto currFieldDef = getTableEntryByIndex<table::Field>(currTypeDef->fieldListIndex);
+            const auto nextFieldDef = getTableEntryByIndex<table::Field>(nextTypeDef->fieldListIndex);
+
+            if (fieldToFind >= currFieldDef && fieldToFind < nextFieldDef)
+                return currTypeDef;
+        }
+
+        return getTableEntryByIndex<table::TypeDef>(table::TableIndex(typeDefCount));
     }
 
     const table::ClassLayout* Assembly::getClassLayoutOfType(const table::TypeDef *typeDef) const {
@@ -266,6 +285,74 @@ namespace ili {
 
         return nullptr;
     }
+
+    const table::MethodDef* Assembly::getMethodOfType(const table::TypeDef *typeDef, std::string_view methodName) const {
+        const table::TypeDef *nextTypeDef = nullptr;
+        const auto typeDefCount = getTableRowCount(table::TypeDef::ID);
+        for (u64 i = 0; i < typeDefCount - 1; i += 1) {
+            const auto *currTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 1));
+            if (typeDef == currTypeDef) {
+                nextTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 2));
+                break;
+            }
+        }
+
+        std::size_t methodCount = 0;
+        if (nextTypeDef == nullptr) {
+            methodCount = (getTableRowCount(table::MethodDef::ID) - typeDef->methodListIndex.index) + 1;
+        } else {
+            methodCount = (nextTypeDef->methodListIndex.index - typeDef->methodListIndex.index) + 1;
+        }
+
+        for (u64 i = 0; i < methodCount; i++) {
+            const auto *methodDef = getTableEntryByIndex<table::MethodDef>(table::TableIndex( typeDef->methodListIndex.index + i));
+
+            const auto name = getString(methodDef->nameIndex);
+            if (name == methodName) {
+                return methodDef;
+            }
+        }
+
+        return nullptr;
+    }
+
+    std::size_t Assembly::getTypeSize(const table::TypeDef* typeDef) const {
+        if (typeDef == nullptr)
+            return 0;
+
+        const table::TypeDef* nextTypeDef = nullptr;
+        const auto typeDefCount = getTableRowCount(table::TypeDef::ID);
+        for (u64 i = 0; i < typeDefCount - 1; i++) {
+            const auto currTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 1));
+            nextTypeDef = getTableEntryByIndex<table::TypeDef>(table::TableIndex(i + 2));
+
+            if (typeDef == currTypeDef) {
+                break;
+            }
+        }
+
+        std::size_t fieldCount = 0;
+        if (nextTypeDef == nullptr) {
+            fieldCount = (getTableRowCount(table::Field::ID) - typeDef->fieldListIndex.index) + 1;
+        } else {
+            fieldCount = (nextTypeDef->fieldListIndex.index - typeDef->fieldListIndex.index) + 1;
+        }
+
+        std::size_t objectSize = 0;
+        for (u16 i = 0; i < fieldCount; i += 1) {
+            const auto field = getTableEntryByIndex<table::Field>(table::TableIndex<u32>(typeDef->fieldListIndex.index + i));
+            const auto sig = getBlobBytes(field->signatureIndex);
+
+            SignatureElementType signatureElementType = {};
+            std::memmove(&signatureElementType, sig.data() + sig.size() - 1, sizeof(signatureElementType));
+
+            const size_t fieldSize = getSignatureElementTypeSize(signatureElementType);
+            objectSize += fieldSize;
+        }
+
+        return objectSize;
+    }
+
 
     void Assembly::parseMethods() {
 
@@ -306,6 +393,7 @@ namespace ili {
         return reinterpret_cast<const char *>(&m_streams.string.data[index.index]);
     }
 
+
     std::size_t getBlobHeaderSize(u8 firstByte) {
         if ((firstByte & 0x80) == 0x00)
             return 1;
@@ -336,8 +424,16 @@ namespace ili {
         return { &blobStart[index + blobHeaderSize], blobSize };
     }
 
+    std::span<const u8> Assembly::getUserStringBytes(table::UserStringIndex index) const {
+        return getBlob(m_streams.userString.data.data(), index.index);
+    }
+
+    std::span<const u8> Assembly::getBlobBytes(table::BlobIndex index) const {
+        return getBlob(m_streams.blob.data.data(), index.index);
+    }
+
     std::string Assembly::getUserString(table::UserStringIndex index) const {
-        const auto blob = getBlob(m_streams.userString.data.data(), index.index);
+        const auto blob = getUserStringBytes(index);
 
         std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,char16_t> conversion;
         return conversion.to_bytes(
@@ -350,20 +446,32 @@ namespace ili {
 
     Assembly::QualifiedName Assembly::getQualifiedMemberName(table::Token memberRefToken) const {
         const auto memberRef   = this->getTableEntry<table::MemberRef>(memberRefToken);
-        const auto typeRef     = this->getTableEntry<table::TypeRef>(memberRef->classIndex);
-        const auto assemblyRef = this->getTableEntry<table::AssemblyRef>(typeRef->resolutionScopeIndex);
 
-        const auto assembly  = this->getString(assemblyRef->nameIndex);
-        const auto nameSpace = this->getString(typeRef->typeNamespaceIndex);
-        const auto type      = this->getString(typeRef->typeNameIndex);
-        const auto method    = this->getString(memberRef->nameIndex);
+        switch (table::Token(memberRef->classIndex).getId()) {
+            case table::TypeRef::ID: {
+                const auto typeRef     = this->getTableEntry<table::TypeRef>(memberRef->classIndex);
+                const auto assemblyRef = this->getTableEntry<table::AssemblyRef>(typeRef->resolutionScopeIndex);
 
-        return QualifiedName {
-            assembly,
-            nameSpace,
-            type,
-            method
-        };
+                const auto assembly  = this->getString(assemblyRef->nameIndex);
+                const auto nameSpace = this->getString(typeRef->typeNamespaceIndex);
+                const auto type      = this->getString(typeRef->typeNameIndex);
+                const auto method    = this->getString(memberRef->nameIndex);
+
+                return QualifiedName {
+                    assembly,
+                    nameSpace,
+                    type,
+                    method
+                };
+            }
+            case table::TypeSpec::ID: {
+                const auto typeSpec = this->getTableEntry<table::TypeSpec>(memberRef->classIndex);
+                typeSpec.
+
+            }
+        }
+
+        return {};
     }
 
     [[nodiscard]] u64 Assembly::getTableRowCount(table::TableID id) const {

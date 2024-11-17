@@ -38,14 +38,14 @@ namespace ili {
     }
 
 
-    Method::Method(const Assembly *executable, table::Token methodToken) : m_executable(executable), m_methodToken(methodToken) {
+    Method::Method(const Assembly *assembly, table::Token methodToken) : m_assembly(assembly), m_methodToken(methodToken) {
 
     }
 
     const table::MethodDef* Method::getMethodDef() const {
         if (m_methodDef != nullptr) return m_methodDef;
 
-        m_methodDef = m_executable->getTableEntry<table::MethodDef>(m_methodToken);
+        m_methodDef = m_assembly->getTableEntry<table::MethodDef>(m_methodToken);
 
         return m_methodDef;
     }
@@ -58,28 +58,28 @@ namespace ili {
         if (!m_byteCode.empty()) return m_byteCode;
 
         const auto methodDef = getMethodDef();
-        const auto section = m_executable->getVirtualSection(methodDef->rva);
+        const auto section = m_assembly->getVirtualSection(methodDef->rva);
         if (section == nullptr) {
             return {};
         }
 
         // Try to interpret the data using the tiny header format
         {
-            const auto tinyHeaderBytes = m_executable->getSectionBytes(*section, methodDef->rva, sizeof(CorILMethodTiny));
+            const auto tinyHeaderBytes = m_assembly->getSectionBytes(*section, methodDef->rva, sizeof(CorILMethodTiny));
             const auto tinyHeader = reinterpret_cast<const CorILMethodTiny *>(tinyHeaderBytes.data());
 
             if (CorILMethodType(tinyHeader->type) == CorILMethodType::TinyFormat) {
-                m_byteCode = m_executable->getSectionBytes(*section, methodDef->rva + sizeof(CorILMethodTiny), tinyHeader->size);
+                m_byteCode = m_assembly->getSectionBytes(*section, methodDef->rva + sizeof(CorILMethodTiny), tinyHeader->size);
             }
         }
 
         // If that didn't work, it must be a fat header
         if (m_byteCode.empty()) {
-            const auto fatHeaderBytes = m_executable->getSectionBytes(*section, methodDef->rva, sizeof(CorILMethodFat));
+            const auto fatHeaderBytes = m_assembly->getSectionBytes(*section, methodDef->rva, sizeof(CorILMethodFat));
             const auto fatHeader = reinterpret_cast<const CorILMethodFat *>(fatHeaderBytes.data());
 
             if (CorILMethodType(fatHeader->type) == CorILMethodType::FatFormat) {
-                m_byteCode = m_executable->getSectionBytes(*section, methodDef->rva + fatHeader->headerSize * sizeof(u32), fatHeader->codeSize);
+                m_byteCode = m_assembly->getSectionBytes(*section, methodDef->rva + fatHeader->headerSize * sizeof(u32), fatHeader->codeSize);
             }
         }
 
@@ -90,8 +90,5 @@ namespace ili {
 
         return m_byteCode;
     }
-
-
-
 
 }

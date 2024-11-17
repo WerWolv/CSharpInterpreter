@@ -3,6 +3,8 @@
 #include <list>
 #include <vector>
 #include <functional>
+#include <set>
+#include <utility>
 
 #include <ili/assembly.hpp>
 #include <ili/tables.hpp>
@@ -17,49 +19,11 @@ namespace ili {
         Invalid                 = 0,
         Int32                   = 1,
         Int64                   = 2,
-        Native_int              = 4,
-        Native_unsigned_int     = 8,
+        NativeInt               = 4,
+        NativeUnsignedInt       = 8,
         F                       = 16,
         O                       = 32,
         Pointer                 = 64
-    };
-
-    enum class SignatureElementType : u8 {
-        End,
-        Void,
-        Boolean,
-        Char,
-        I1,
-        U1,
-        I2,
-        U2,
-        I4,
-        U4,
-        I8,
-        U8,
-        R4,
-        R8,
-        String,
-        Ptr,
-        ByRef,
-        ValueType,
-        Class,
-        Var,
-        Array,
-        GenericInst,
-        TypedByRef,
-        I,
-        U,
-        FuncPtr,
-        Object,
-        SzArray,
-        MVar,
-        CmodReqd,
-        CmodOpt,
-        Internal,
-        Modifier,
-        Sentinel,
-        Pinned
     };
 
     struct VariableBase {
@@ -74,36 +38,14 @@ namespace ili {
         T value;
     };
 
-    constexpr u8 getSignatureElementTypeSize(SignatureElementType type) {
-        switch (type) {
-            using enum SignatureElementType;
-
-            case Boolean:   return 1;
-            case Char:      return 2;
-            case I1:        return 1;
-            case U1:        return 1;
-            case I2:        return 2;
-            case U2:        return 2;
-            case I4:        return 4;
-            case U4:        return 4;
-            case I8:        return 8;
-            case U8:        return 8;
-            case R4:        return 4;
-            case R8:        return 8;
-            case String:    return 8;
-            case Ptr:       return 8;
-            default:        return 0;
-        }
-    }
-
     constexpr u8 getTypeSize(ValueType type) {
         switch (type) {
             using enum ValueType;
 
             case Int32: return 4;
             case Int64: return 8;
-            case Native_int: return 8;
-            case Native_unsigned_int: return 8;
+            case NativeInt: return 8;
+            case NativeUnsignedInt: return 8;
             case F: return 8;
             case O: return 8;
             case Pointer: return 8;
@@ -147,6 +89,10 @@ namespace ili {
                 throw std::out_of_range("Not enough data on stack to pop");
             }
 
+            if (getTypeOnStack() != getValueType<T>()) {
+                throw std::runtime_error("Tried to pop different type than was on stack");
+            }
+
             m_typeStack.pop_back();
             m_stackPointer -= sizeof(T);
 
@@ -161,10 +107,24 @@ namespace ili {
         }
 
         template<typename T>
-        void push(ValueType type, T value) {
-            const auto size = getTypeSize(type);
-            std::memcpy(m_stackPointer, &value, size);
-            m_typeStack.push_back(type);
+        static constexpr ValueType getValueType() {
+            if constexpr (std::same_as<T, i32>) return ValueType::Int32;
+            if constexpr (std::same_as<T, i64>) return ValueType::Int64;
+            if constexpr (std::same_as<T, Float>) return ValueType::F;
+            if constexpr (std::same_as<T, NativeInt>) return ValueType::NativeInt;
+            if constexpr (std::same_as<T, NativeUnsignedInt>) return ValueType::NativeUnsignedInt;
+            if constexpr (std::same_as<T, ManagedPointer>) return ValueType::O;
+            if constexpr (std::same_as<T, UnmanagedPointer>) return ValueType::Pointer;
+
+            std::unreachable();
+        }
+
+        template<typename T>
+        void push(T value) {
+            constexpr static auto ValueType = getValueType<T>();
+            constexpr static auto ValueSize = getTypeSize(ValueType);
+            std::memcpy(m_stackPointer, &value, ValueSize);
+            m_typeStack.push_back(ValueType);
             m_stackPointer += sizeof(T);
         }
 
@@ -180,14 +140,14 @@ namespace ili {
 
     class Method {
     public:
-        Method(const Assembly *executable, table::Token methodToken);
+        Method(const Assembly *assembly, table::Token methodToken);
 
         [[nodiscard]] const table::MethodDef* getMethodDef() const;
         [[nodiscard]] table::Token getToken() const;
         [[nodiscard]] std::span<const u8> getByteCode() const;
 
         [[nodiscard]] util::Generator<op::Instruction> getInstructions();
-        [[nodiscard]] const Assembly* getExecutable() const { return m_executable; }
+        [[nodiscard]] const Assembly* getAssembly() const { return m_assembly; }
 
         [[nodiscard]] auto& getLocalVariable(u16 index) {
             return m_localVariables[index];
@@ -202,7 +162,7 @@ namespace ili {
         }
 
     private:
-        const Assembly *m_executable;
+        const Assembly *m_assembly;
 
         table::Token m_methodToken;
         mutable const table::MethodDef *m_methodDef = nullptr;
@@ -226,21 +186,41 @@ namespace ili {
         void nop();
         void brk();
         void call(Method &method, table::Token token);
-        void ldstr(Method &method, u32 value);
+        void ldstr(Method &method, table::Token value);
         void ldloca(Method &method, u16 id);
         void ldarg(Method &method, u16 id);
         void stloc(Method &method, u16 id);
         void ldloc(Method& method, u16 id);
         void br(Method &method, i32 offset);
+        void ldsflda(Method &method, table::Token token);
+        void ldsfld(Method &method, table::Token token);
+        void stsfld(Method &method, table::Token token);
+        void pop();
+        void newobj(Method &method, table::Token token);
+
+        template<typename T>
+        void ldc(auto value) {
+            m_stack.push<T>(value);
+        }
 
     private:
         void executeInstructions(Method &method);
+        const table::Field* loadStaticField(Method &method, table::Token token);
+
+        std::unique_ptr<VariableBase> createVariableFromStackContent();
+        void storeVariableOnStack(const std::unique_ptr<VariableBase> &variable);
+        std::unique_ptr<VariableBase> createHeapObject(std::size_t size);
 
     private:
         std::map<std::string, Assembly> m_assemblies;
         std::list<Method> m_methodStack;
         std::list<AssemblyLoaderFunction> m_assemblyLoaders;
         Stack m_stack;
+        std::set<const table::TypeDef*> m_initializedTypes;
+
+        std::map<const table::Field*, std::unique_ptr<VariableBase>> m_staticVariables;
+        u64 m_heapKey = 0;
+        std::map<u64, std::vector<u8>> m_heap;
     };
 
 }

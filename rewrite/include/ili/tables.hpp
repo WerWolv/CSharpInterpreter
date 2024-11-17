@@ -381,7 +381,7 @@ namespace ili::table {
     static_assert(sizeof(FieldAttributes) == 2);
 
     struct Field : Table<0x04> {
-        u16 flags;
+        FieldAttributes flags;
         StringIndex nameIndex;
         BlobIndex signatureIndex;
     };

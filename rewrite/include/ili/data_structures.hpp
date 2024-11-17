@@ -269,12 +269,83 @@ namespace ili {
     };
     static_assert(sizeof(CorILMethodFat) == 12);
 
-    struct ManagedPointer {
-        u64 value;
+    enum class ManagedPointer : u64 {};
+    enum class UnmanagedPointer : u64 {};
+    enum class NativeInt : i64 {};
+    enum class NativeUnsignedInt : u64 {};
+    struct Float {
+        Float() = default;
+        Float(f64 value) : value(value) {}
+
+        operator f32() const {
+            return value;
+        }
+
+        operator f64() const {
+            return value;
+        }
+
+        f64 value;
     };
 
-    struct UnmanagedPointer {
-        u64 value;
+    enum class SignatureElementType : u8 {
+        End,
+        Void,
+        Boolean,
+        Char,
+        I1,
+        U1,
+        I2,
+        U2,
+        I4,
+        U4,
+        I8,
+        U8,
+        R4,
+        R8,
+        String,
+        Ptr,
+        ByRef,
+        ValueType,
+        Class,
+        Var,
+        Array,
+        GenericInst,
+        TypedByRef,
+        I,
+        U,
+        FuncPtr,
+        Object,
+        SzArray,
+        MVar,
+        CmodReqd,
+        CmodOpt,
+        Internal,
+        Modifier,
+        Sentinel,
+        Pinned
     };
+
+    constexpr u8 getSignatureElementTypeSize(SignatureElementType type) {
+        switch (type) {
+            using enum SignatureElementType;
+
+            case Boolean:   return 1;
+            case Char:      return 2;
+            case I1:        return 1;
+            case U1:        return 1;
+            case I2:        return 2;
+            case U2:        return 2;
+            case I4:        return 4;
+            case U4:        return 4;
+            case I8:        return 8;
+            case U8:        return 8;
+            case R4:        return 4;
+            case R8:        return 8;
+            case String:    return 8;
+            case Ptr:       return 8;
+            default:        return 0;
+        }
+    }
 
 }
